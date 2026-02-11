@@ -39,6 +39,16 @@ def get_groq_client():
 def encode_image_to_base64(image):
     """Convert PIL Image to base64 string"""
     buffered = io.BytesIO()
+    # Convert to RGB if image has transparency or incompatible mode
+    if image.mode in ('RGBA', 'LA', 'P'):
+        rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+        if image.mode == 'P':
+            image = image.convert('RGBA')
+        rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+        image = rgb_image
+    elif image.mode not in ('RGB', 'L'):
+        image = image.convert('RGB')
+    
     image.save(buffered, format="JPEG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return img_str
@@ -105,9 +115,15 @@ Extract as much information as possible from the image. If any field is not visi
         return product_data, None
         
     except json.JSONDecodeError as e:
-        return None, f"Failed to parse JSON response: {str(e)}\n\nRaw response: {response_text}"
+        # Log the full response for debugging but return sanitized error
+        import logging
+        logging.error(f"JSON parsing error: {str(e)}\nRaw response: {response_text[:500]}...")
+        return None, "Failed to parse the AI response. The image may not contain clear product information. Please try with a clearer image."
     except Exception as e:
-        return None, f"Error during extraction: {str(e)}"
+        # Log full error but return user-friendly message
+        import logging
+        logging.error(f"Extraction error: {str(e)}")
+        return None, f"Error during extraction: {type(e).__name__}. Please try again or use a different image."
 
 def convert_to_csv(products_data):
     """Convert list of product dictionaries to CSV string"""
